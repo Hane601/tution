@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>QR Code Scanner</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+    <h1>Scan QR Code</h1>
+    
+    <!-- QR Code Scanner -->
+    <div id="reader"></div>
+    <p id="result"></p>
+
+    <!-- Audio for sounds -->
+    <audio id="beep-sound" src="/static/Students/audio/beep.mp3"></audio>
+    <audio id="alert-sound" src="/static/Students/audio/alert.mp3"></audio>
+
+    <!-- List of scanned QR codes -->
+    <h2>Scanned QR Codes:</h2>
+    <ul id="scanned-list"></ul>
+
+    <script>
+        let scannedTexts = new Set();  // Store unique scanned values
+        let scanEnabled = true; // Prevent immediate re-scanning
+
+        function playBeep() {
+            let beepSound = document.getElementById("beep-sound");
+            beepSound.currentTime = 0;
+            beepSound.play();
+        }
+
+        function playAlert() {
+            let alertSound = document.getElementById("alert-sound");
+            alertSound.currentTime = 0;
+            alertSound.play();
+        }
+
+        function stopAlert() {
+            let alertSound = document.getElementById("alert-sound");
+            alertSound.pause(); 
+            alertSound.currentTime = 0; 
+        }
+
+        function addToList(text) {
+            let list = document.getElementById("scanned-list");
+
+            // Check for duplicates
+            if (scannedTexts.has(text)) {
+                playAlert();  
+                setTimeout(() => {
+                    alert(`Duplicate detected: ${text}`);
+                    stopAlert(); // Stop sound after user presses "OK"
+                }, 100);
+                return;  
+            }
+
+            // Add new item to list
+            scannedTexts.add(text);
+            let li = document.createElement("li");
+            li.textContent = text;
+            list.appendChild(li);
+        }
+
+        function getCSRFToken() {
+            let cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                let cookie = cookies[i].trim();
+                if (cookie.startsWith("csrftoken=")) {
+                    return cookie.substring("csrftoken=".length, cookie.length);
+                }
+            }
+            return "";
+        }
+
+        function onScanSuccess(decodedText) {
+            if (!scanEnabled) return; // Prevent immediate re-scanning
+
+            scanEnabled = false;
+            setTimeout(() => scanEnabled = true, 2000); // Enable scanning after 2 seconds
+
+            console.log("Scanned QR Code:", decodedText);
+            document.getElementById("result").innerText = `Scanned: ${decodedText}`;
+
+            let requestURL = `/Subject_view/`;
+
+            fetch(requestURL, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCSRFToken()
+                },
+                body: JSON.stringify({ qr_text: decodedText })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Response from server:", data);
+                if (data.status === "success") {
+                    playBeep();
+                    addToList(decodedText);
+                } else {
+                    playAlert(); // Play alert **before** showing the error message
+                    
+                    setTimeout(() => {
+                        alert(data.message); // Show the error message
+                        stopAlert(); // Stop the alert sound after clicking "OK"
+                    }, 100); // Small delay for smoother experience
+                }
+            })
+            .catch(error => {
+                console.error("Error:", error);
+                playAlert(); // Play alert immediately
+                
+                setTimeout(() => {
+                    alert("An error occurred. Please try again."); // Show generic error
+                    stopAlert(); // Stop the alert sound after clicking "OK"
+                }, 100);
+            });
+        }
+
+        let scanner = new Html5QrcodeScanner("reader", {
+            fps: 30,
+            qrbox: 600
+        });
+
+        scanner.render(onScanSuccess);
+    </script>
+
+</body>
+</html>
